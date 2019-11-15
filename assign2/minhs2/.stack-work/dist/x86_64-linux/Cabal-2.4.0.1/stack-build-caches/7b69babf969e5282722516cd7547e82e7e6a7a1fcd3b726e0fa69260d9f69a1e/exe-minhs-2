@@ -1,0 +1,40 @@
+/home/niko_he/COMP3161/assign2/minhs2/MinHS/Parse.hs:
+  hash: 8c0a08e78aed5845595556b31f2f0cf0b832a4c726787be4f2502ad3fdfd991b
+  size: 4521
+  modtime: 1571198861
+/home/niko_he/COMP3161/assign2/minhs2/Main.hs:
+  hash: 314506ff58c5f5009cf384e7abadf93f2c5d5d5f6ebb59c516c89e58ebcd90da
+  size: 2557
+  modtime: 1571198861
+/home/niko_he/COMP3161/assign2/minhs2/MinHS/TCMonad.hs:
+  hash: abf930261f6f1b19fb3dca465028702ae1edba3e08a7ba886524fbedf8b23091
+  size: 1248
+  modtime: 1571198861
+/home/niko_he/COMP3161/assign2/minhs2/MinHS/Pretty.hs:
+  hash: d287592f9c7acda87fc20f8dbd01df25d4c3c5b472af4bbe43957601366a5116
+  size: 3880
+  modtime: 1571198861
+/home/niko_he/COMP3161/assign2/minhs2/minhs2.cabal:
+  hash: 8962d86ec3cbaa1025caef579fea3e4557e423300035dfd9399393db72722eae
+  size: 825
+  modtime: 1571198861
+/home/niko_he/COMP3161/assign2/minhs2/MinHS/Subst.hs:
+  hash: 6392ce61d56c8a79c262cfaa515afd042de8d4ca41707ef31048f8a0a4c0f0af
+  size: 1390
+  modtime: 1573440031
+/home/niko_he/COMP3161/assign2/minhs2/MinHS/Evaluator.hs:
+  hash: 46e3c2359f949a0bd7fa0a7d594d3c529bd6a47907055b31de0c3fe2b766dc7c
+  size: 3243
+  modtime: 1573221161
+/home/niko_he/COMP3161/assign2/minhs2/MinHS/Syntax.hs:
+  hash: 73bb7665df7b11ad4ce846b5e6e9e11dc7dd43dd50b16a6f6364a6c23f5165ab
+  size: 1711
+  modtime: 1571198861
+/home/niko_he/COMP3161/assign2/minhs2/MinHS/Env.hs:
+  hash: 7dd2e340b9e7801eec60380c933e7c607f4a4ebcf28fec803ebbe4b02e0f99fc
+  size: 854
+  modtime: 1573439983
+/home/niko_he/COMP3161/assign2/minhs2/MinHS/TyInfer.hs:
+  hash: 096c085151938973cd731b1aaee69a9b9eb99ad6f206078b72d485862a4901e5
+  size: 9624
+  modtime: 1573797932
