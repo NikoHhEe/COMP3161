@@ -64,7 +64,7 @@ module MinHS.TyInfer where
   tvGamma = nub . foldMap tvQ
   
   infer :: Program -> Either TypeError Program
-  infer program = do (p',tau, s) <- runTC $ inferProgram initialGamma program
+  infer program = do (p',term, s) <- runTC $ inferProgram initialGamma program
                      return p'
   
   unquantify :: QType -> TC Type
@@ -88,195 +88,162 @@ module MinHS.TyInfer where
                                                 (substQType (x =:TypeVar (show i)) t)
   
   unify :: Type -> Type -> TC Subst
-  unify (TypeVar v1) (TypeVar v2) = if v1 == v2 then
+  unify (TypeVar tv1) (TypeVar tv2) = if tv1 == tv2 then
                                       return emptySubst
                                     else
-                                      return (v1 =: (TypeVar v2))
-  unify (Base t1) (Base t2) = if t1 == t2 then
+                                      return (tv1 =: (TypeVar tv2))
+  unify (Base b1) (Base b2) = if b1 == b2 then
                                 return emptySubst
                               else
-                                typeError (TypeMismatch (Base t1) (Base t2))
-  unify (Prod x1 x2) (Prod y1 y2) = do
-                          s1 <- unify x1 y1
-                          s2 <- unify (substitute s1 x2) (substitute s1 y2)
-                          return (s1 <> s2)
-  unify (Sum x1 x2) (Sum y1 y2) = do
-                          s1 <- unify x1 y1
-                          s2 <- unify (substitute s1 x2) (substitute s1 y2)
-                          return (s1 <> s2)
-  unify (Arrow x1 x2) (Arrow y1 y2) = do
-                          s1 <- unify x1 y1
-                          s2 <- unify (substitute s1 x2) (substitute s1 y2)
-                          return (s1 <> s2)
-  unify (TypeVar v) (t) =  if (elem v (tv t)) then
-                            typeError (OccursCheckFailed v t)
+                                typeError (TypeMismatch (Base b1) (Base b2))
+  unify (Prod p1 p2) (Prod p3 p4) = do
+                          q1 <- unify p1 p3
+                          q2 <- unify (substitute q1 p2) (substitute q1 p4)
+                          return (q1 <> q2)
+  unify (Sum s1 s2) (Sum s3 s4) = do
+                          t1 <- unify s1 s3
+                          t2 <- unify (substitute t1 s2) (substitute t1 s4)
+                          return (t1 <> t2)
+  unify (Arrow a1 a2) (Arrow a3 a4) = do
+                          b1 <- unify a1 a3
+                          b2 <- unify (substitute b1 a2) (substitute b1 a4)
+                          return (b1 <>b2)
+  unify (TypeVar tvar) n =  if (elem tvar (tv n)) then
+                            typeError (OccursCheckFailed tvar n)
                           else
-                            return (v =: t) 
-  unify (t) (TypeVar v) =  if (elem v (tv t)) then
-                              typeError (OccursCheckFailed v t)
+                            return (tvar =: n) 
+  unify n (TypeVar tvar) =  if (elem tvar (tv n)) then
+                              typeError (OccursCheckFailed tvar n)
                             else
-                              return (v =: t)
-  --unify _ _ = typeError (MalformedAlternatives)
-  unify t1 t2 = error ("implement unify! t1 is -->" ++ (show t1) ++"<---->" ++ (show t2))
+                              return (tvar =: n)
   
   generalise :: Gamma -> Type -> QType
-  generalise g t = foldl (\t' -> \x -> Forall x t') (Ty t) $ reverse $ filter (\x -> not $ elem x (tvGamma g)) (tv t)
-  
-  -- Infer program
+  generalise ga tp = convert ((tvQ (Ty tp)) \\ (tvGamma ga)) tp
+                    
+  convert :: [Id] -> Type -> QType
+  convert [] tp = Ty tp
+  convert (x : xs) tp = Forall x (convert xs tp)
+
+
   inferProgram :: Gamma -> Program -> TC (Program, Type, Subst)
-  inferProgram env [Bind name _ [] exp] = do 
-    (e, t, s) <- inferExp env exp 
-    case generalise env (substitute s t) of 
-      Ty t  -> return ([Bind "main" (Just $ Ty (substitute s t)) [] e], substitute s t, s)
-      t'    -> return ([Bind "main" (Just $ t') [] e], substitute s t, s)
-  inferProgram env bs = error "implement me! don't forget to run the result substitution on the entire expression using allTypes from Syntax.hs"
-  
-  -- Infer expression
+  inferProgram ga [Bind n _ [] expr] = do 
+    (p, tp, sub) <- inferExp ga expr 
+    case generalise ga (substitute sub tp) of 
+      Ty ty1 -> return ([Bind "main" (Just (Ty (substitute sub tp))) [] p], substitute sub tp, sub)
+      ty2 -> return ([Bind "main" (Just ty2) [] p], substitute sub tp, sub)
+    
   inferExp :: Gamma -> Exp -> TC (Exp, Type, Subst)
-  inferExp g (Num n) = return (Num n, Base Int, emptySubst)
+  inferExp ga (Num n) = return (Num n, Base Int, emptySubst)
   
   -- Variables
-  inferExp g (Var v) = do
-    case E.lookup g v of 
-      Just t        -> do 
-        t'  <- unquantify t 
-        return (Var v, t', emptySubst)
-      Nothing       -> typeError $ NoSuchVariable v 
+  inferExp ga (Var a) = do
+    case E.lookup ga a of 
+      Just t1 -> do 
+              t2  <- unquantify t1
+              return (Var a, t2, emptySubst)
+      Nothing -> typeError (NoSuchVariable a) 
   
   -- Constructor types
-  inferExp g (Con v) = do
-    case constType v of 
-      Just t        -> do 
-        t' <- unquantify t
-        return (Con v, t', emptySubst)
-      Nothing       -> typeError $ NoSuchConstructor v 
+  inferExp ga (Con tp) = do
+    case constType tp of 
+      Just t1 -> do 
+        t2 <- unquantify t1
+        return (Con tp, t2, emptySubst)
+      Nothing -> typeError (NoSuchConstructor tp) 
   
-  -- Prim ops
-  inferExp g (Prim op) = do 
-    t' <- unquantify (primOpType op)
-    return (Prim op, t', emptySubst)
+  -- Primary operator
+  inferExp ga (Prim op) = do 
+    t <- unquantify (primOpType op)
+    return (Prim op, t, emptySubst)
   
-  -- Apply expression 
-  inferExp g (App e1 e2) = do 
-    (e1', t1, s)      <- inferExp g e1
-    (e2', t2, s')     <- inferExp (substGamma s g) e2
-    alpha             <- fresh 
-    u                 <- unify (substitute s' t1) (Arrow t2 alpha)
-    return (App (allTypes (substQType (u <> s')) e1') e2', substitute u alpha, u <> s' <> s)
+  -- App expression 
+  inferExp ga (App exp1 exp2) = do 
+    (exp1', t1, sub) <- inferExp ga exp1
+    (exp2', t2, sub') <- inferExp (substGamma sub ga) exp2
+    alpha <- fresh 
+    un <- unify (substitute sub' t1) (Arrow t2 alpha)
+    return (App (allTypes (substQType (un <> sub')) exp1') exp2', 
+                 substitute un alpha, un <> sub' <> sub)
   
   -- If expression
-  inferExp g (If e e1 e2) = do 
-    (e', t, s)  <- inferExp g e
-    u           <- unify t (Base Bool)
-    case substitute (u <> s) t of 
-      Base Bool   -> do
-        (e1', t1, s1)   <- inferExp (substGamma (u <> s) g) e1
-        (e2', t2, s2)   <- inferExp (substGamma (s1 <> u <> s) g) e2
-        u'              <- unify (substitute s2 t1) t2 
-        return ((If e' e1' e2'), substitute u' t2, u' <> s2 <> s1 <> u <> s)
-      t           -> typeError $ TypeMismatch (Base Bool) t
+  inferExp ga (If c et ee) = do 
+    (c', tp, sub)  <- inferExp ga c
+    un <- unify tp (Base Bool)
+    case substitute (un <> sub) tp of 
+      Base Bool -> do
+        (et', t1, s1)   <- inferExp (substGamma (un <> sub) ga) et
+        (ee', t2, s2)   <- inferExp (substGamma (s1 <> un <> sub) ga) ee
+        un'             <- unify (substitute s2 t1) t2 
+        return ((If c' et' ee'), substitute un' t2, un' <> s2 <> s1 <> un <> sub)
+      tp -> typeError (TypeMismatch (Base Bool) tp)
   
   -- Let binding
-  inferExp g (Let bs e) = do
-    (bs', g', s)   <- bindName g bs  
-    (e', t', s')   <- inferExp g' e 
-    return (allTypes (substQType (s' <> s)) (Let bs' e'), t', s <> s')
+  inferExp ga (Let bd exp) = do
+    (bd', ga', sub) <- bind ga bd  
+    (exp1, tp, sub') <- inferExp ga' exp 
+    return (allTypes (substQType (sub' <> sub)) (Let bd' exp1), tp, sub <> sub')
   
   -- Let function expression
-  inferExp g (Recfun (Bind f tau vs e)) = do
-    gb              <- bindFunction g vs
-    alpha           <- fresh
-    let g' = (gb `E.add` (f, Ty alpha))
-    (e', t, s)      <- inferExp g' e 
-    u               <- unify (substitute s alpha) (getFunctionType g' s vs t)
-    -- error $ 
-    --   "\nt: " <> (show (substitute u $ getFunctionType g' s vs t)) <> 
-    --   "\ns: " <> (show s)
-    case tau of 
-      Nothing       -> do 
-        let out = allTypes (substQType (s <> u)) $ Recfun (Bind f (Just $ Ty $ substitute u $ getFunctionType g' s vs t) vs e')
-        return (out, substitute u $ getFunctionType g' s vs t, s <> u)   
-      Just (Ty t')  -> do 
-        u'          <- unify t' (substitute u $ getFunctionType g' s vs t)
-        let out = allTypes (substQType (s <> u)) $ Recfun (Bind f (Just $ Ty $ substitute u $ getFunctionType g' s vs t) vs e')
-        return (out, substitute u $ getFunctionType g' s vs t, s <> u)   
-  
-  -- Note: this is the only case you need to handle for case expressions
-  inferExp g (Case e [Alt "Inl" [x] e1, Alt "Inr" [y] e2]) = do
-    (e', t, s)      <- inferExp g e
-    alphaL          <- fresh
-    let gl = g `E.add` (x, Ty alphaL)
-    (e1', tl, s1)   <- inferExp (substGamma s gl) e1
-    alphaR          <- fresh
-    let gr = g `E.add` (y, Ty alphaR)
-    (e2', tr, s2)   <- inferExp (substGamma (s1 <> s) gr) e2
-    u               <- unify (substitute (s2 <> s1 <> s) (Sum alphaL alphaR)) (substitute (s2 <> s1) t)
-    u'              <- unify (substitute (u <> s2) tl) (substitute u tr)
-    return (Case e' [Alt "Inl" [x] e1', Alt "Inr" [y] e2'], substitute (u' <> u) tr, u' <> u <> s2 <> s1 <> s)
-  
-  inferExp g (Case e _) = typeError MalformedAlternatives
-  
-  -- Letrec
-  inferExp g (Letrec bs e) = do
-    (bs', g', s)    <- bindNameRec g bs 
-    (e', t', s')    <- inferExp g' e
-    return (allTypes (substQType (s' <> s)) (Letrec bs' e'), t', s <> s')
-  
-  -- Everything should be implemented now, so (compiler says) this is redundant
-  -- inferExp g _ = error "inferExp: Implement me!"
-  
-  -- Add all names in binding to gamma 
-  bindNamesToGamma :: Gamma -> [Bind] -> TC (Gamma, [Bind])
-  bindNamesToGamma g bs = bindNamesToGamma' g bs []
-  bindNamesToGamma' :: Gamma -> [Bind] -> [Bind] -> TC (Gamma, [Bind]) 
-  bindNamesToGamma' g [] bs = return $ (g, bs)
-  bindNamesToGamma' g ((Bind x Nothing [] e):xs) bs = do
-    alpha     <- fresh
-    let g' = g `E.add` (x, Ty alpha)
-    bindNamesToGamma' g' xs (bs ++ [Bind x (Just (Ty alpha)) [] e])
-  bindNamesToGamma' g ((Bind x (Just t) [] e):xs) bs = 
-    bindNamesToGamma' (g `E.add` (x, t)) xs (bs ++ [Bind x (Just t) [] e])
-  
-  -- Bind names for the Letrec -- Note that this has to be different from the let expression
-  bindNameRec :: Gamma -> [Bind] -> TC ([Bind], Gamma, Subst)
-  bindNameRec g bs = do 
-    (g', bs')    <- bindNamesToGamma g bs
-    bindNameRec' g' bs' [] emptySubst
-  
-  bindNameRec' :: Gamma -> [Bind] -> [Bind] -> Subst -> TC ([Bind], Gamma, Subst)
-  bindNameRec' g [] bs s = return $ (reverse bs, g, s)
-  bindNameRec' g ((Bind x (Just (Ty t0)) [] e):xs) bs ss = do
-    (e', t, s)    <- inferExp g e
-    u             <- unify t t0
-    let g' = substGamma s $ g `E.add` (x, generalise (substGamma s g) t)
-    (bindNameRec' g' xs ((Bind x (Just (generalise g' (substitute u t))) [] e'):bs) (u <> s <> ss))
-  
-  -- Bind names in let
-  bindName :: Gamma -> [Bind] -> TC ([Bind], Gamma, Subst)
-  bindName g bs = bindName' g bs [] emptySubst
-  
-  bindName' :: Gamma -> [Bind] -> [Bind] -> Subst -> TC ([Bind], Gamma, Subst)
-  bindName' g [] bs s = return $ (reverse bs, g, s)
-  bindName' g ((Bind x t0 [] e):xs) bs ss = do
-    (e', t, s)  <- inferExp g e 
-    case t0 of 
-      Nothing       -> do 
-        let g' =  substGamma s $ g `E.add` (x, generalise (substGamma s g) t)
-        (bindName' g' xs ((Bind x (Just (generalise g' t)) [] e'):bs) (s <> ss))
-      Just (Ty t')  -> do 
-        u           <- unify t' t
-        let g' =  substGamma s $ g `E.add` (x, generalise (substGamma s g) t)
-        (bindName' g' xs ((Bind x (Just (generalise g' t)) [] e'):bs) (s <> ss))
-  
-  -- Bind variables in Letfun
-  bindFunction :: Gamma -> [Id] -> TC Gamma
-  bindFunction g [] = return $ g 
-  bindFunction g (x:xs) = do 
+  inferExp ga (Recfun (Bind f term vs exp)) = do
+    g1 <- bindFunc ga vs
     alpha <- fresh
-    bindFunction (g `E.add` (x, Ty alpha)) xs
+    let ga' = (g1 `E.add` (f, Ty alpha))
+    (exp', tp, sub) <- inferExp ga' exp 
+    un <- unify (substitute sub alpha) (getFuncTy ga' sub vs tp)
+
+    case term of 
+      Nothing -> do 
+        return (result, substitute un (getFuncTy ga' sub vs tp), sub <> un) 
+          where result = allTypes (substQType (sub <> un)) (Recfun (Bind f (Just (Ty (substitute un (getFuncTy ga' sub vs tp)))) vs exp'))
+      Just (Ty t') -> do 
+        un' <- unify t' (substitute un (getFuncTy ga' sub vs tp))
+        return (result, substitute un (getFuncTy ga' sub vs tp), sub <> un)   
+          where result = allTypes (substQType (sub <> un)) (Recfun (Bind f (Just (Ty (substitute un (getFuncTy ga' sub vs tp)))) vs exp'))
   
-  getFunctionType :: Gamma -> Subst -> [Id] -> Type -> Type 
-  getFunctionType g s [] t = t
-  getFunctionType g s (x:xs) t = 
-    case g `E.lookup` x of 
-      Just (Ty t')  -> Arrow (substitute s t') (getFunctionType g s xs t)
+  -- Case expression
+  inferExp ga (Case exp [Alt "Inl" [x] exp1, Alt "Inr" [y] exp2]) = do
+    (exp', tp, sub) <- inferExp ga exp
+    aL <- fresh
+    let gaL = ga `E.add` (x, Ty aL)
+    (exp1', tpL, sub1) <- inferExp (substGamma sub gaL) exp1
+    aR <- fresh
+    let gaR = ga `E.add` (y, Ty aR)
+    (exp2', tpR, sub2) <- inferExp (substGamma (sub1 <> sub) gaR) exp2
+    un <- unify (substitute (sub2 <> sub1 <> sub) (Sum aL aR)) (substitute (sub2 <> sub1) tp)
+    un' <- unify (substitute (un <> sub2) tpL) (substitute un tpR)
+    return (Case exp' [Alt "Inl" [x] exp1', Alt "Inr" [y] exp2'], 
+      substitute (un' <> un) tpR, un' <> un <> sub2 <> sub1 <> sub)
+  
+  -- Bind variables in Recfun
+  bindFunc :: Gamma -> [Id] -> TC Gamma
+  bindFunc ga [] = return ga
+  bindFunc ga (x:xs) = do 
+                      alpha <- fresh
+                      bindFunc (ga `E.add` (x, Ty alpha)) xs
+  
+  -- get the function type
+  getFuncTy :: Gamma -> Subst -> [Id] -> Type -> Type 
+  getFuncTy ga sub [] tp = tp
+  getFuncTy ga sub (x:xs) tp = 
+    case ga `E.lookup` x of 
+      Just (Ty tp1)  -> Arrow (substitute sub tp1) (getFuncTy ga sub xs tp)
+
+  -- Bind names in let
+  bind :: Gamma -> [Bind] -> TC ([Bind], Gamma, Subst)
+  bind ga bd = bindHelp ga bd [] emptySubst
+  
+  -- Helper function of Bind
+  bindHelp :: Gamma -> [Bind] -> [Bind] -> Subst -> TC ([Bind], Gamma, Subst)
+  bindHelp ga [] bd sub = return (reverse bd, ga, sub)
+  bindHelp ga ((Bind x ty [] exp):xs) bd sub' = do
+    (exp', tp, sub)  <- inferExp ga exp 
+    case ty of 
+      Nothing       -> do 
+        (bindHelp ga' xs ((Bind x (Just (generalise ga' tp)) [] exp'):bd) (sub <> sub'))
+          where ga' =  substGamma sub (ga `E.add` (x, generalise (substGamma sub ga) tp))
+      Just (Ty tp')  -> do 
+        un           <- unify tp' tp
+        (bindHelp ga' xs ((Bind x (Just (generalise ga' tp)) [] exp'):bd) (sub <> sub'))
+          where ga' =  substGamma sub (ga `E.add` (x, generalise (substGamma sub ga) tp))
+  
+  
